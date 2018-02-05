@@ -18,6 +18,8 @@ contract FundsVault is Ownable, ValidationUtil {
 
     enum State {Active, Refunding, Closed}
 
+    State public state;
+
     mapping (address => uint) public deposited;
 
     // Адрес, куда будут переведены средства, в случае успеха
@@ -28,11 +30,10 @@ contract FundsVault is Ownable, ValidationUtil {
     // случае средства из подвала переводятся на спец. кошелек, и возврат будет делаться в ручном режиме
     address public sump;
 
-    State public state;
-
     event Closed();
     event RefundsEnabled();
     event Refunded(address indexed beneficiary, uint weiAmount);
+    event RefundedToSump(address indexed beneficiary, uint weiAmount);
 
     /**
      * Указываем на какой кошелек будут потом переведены собранные средства, в случае, если будет вызвана функция close()
@@ -67,6 +68,20 @@ contract FundsVault is Ownable, ValidationUtil {
     }
 
     /**
+     * Установливаем для переводов средств
+     */
+    function setWallet(address walletAddress) public onlyOwner inState(State.Active) {
+        wallet = walletAddress;
+    }
+
+    /**
+     * Установливаем для переводов сомнительных средств
+     */
+    function setSump(address walletAddress) public onlyOwner inState(State.Active) {
+        sump = walletAddress;
+    }
+
+    /**
      * Установить режим возврата денег
      */
     function enableRefunds() public onlyOwner inState(State.Active) {
@@ -96,7 +111,7 @@ contract FundsVault is Ownable, ValidationUtil {
 
         sump.transfer(depositedValue);
 
-        Refunded(investor, depositedValue);
+        RefundedToSump(investor, depositedValue);
     }
 
     /** Только, если текущее состояние соответсвует состоянию  */

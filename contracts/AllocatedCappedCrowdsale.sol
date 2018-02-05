@@ -31,8 +31,17 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     /* Токен, который продаем */
     BurnableCrowdsaleToken public token;
 
-    /* Токены будут выдаваться с этого адреса */
-    address public multisigOrSimpleWallet;
+    /* Адрес, куда будут переводится собранные средства, в случае успеха */
+    address public destinationWallet;
+
+    /* Адрес, куда будут направляться средства от пресейла */
+    address public presaleWallet;
+
+    /* Старт пресейла в формате UNIX timestamp */
+    uint public presaleStartsAt;
+
+    /* Конец пресейла в формате UNIX timestamp */
+    uint public presaleEndsAt;
 
     /* Старт продаж в формате UNIX timestamp */
     uint public startsAt;
@@ -69,6 +78,9 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     /* Текущая стоимость токена в центах */
     uint public oneTokenInCents = 5;
 
+    /** Мапа, адрес инвестора - кол-во эфира собранного на пресейле */
+    mapping (address => uint) public presaleInvestedAmountOf;
+
     /** Мапа адрес инвестора - кол-во выданных токенов */
     mapping (address => uint) public tokenAmountOf;
 
@@ -76,10 +88,10 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     mapping (address => uint) public investedAmountOf;
 
     /** Адреса, куда будут распределены токены */
-    address public teamMultisigOrSimpleWallet;
-    address public advisorsMultisigOrSimpleWallet;
-    address public referalMultisigOrSimpleWallet;
-    address public reserveMultisigOrSimpleWallet;
+    address public teamWallet;
+    address public advisorsWallet;
+    address public referalWallet;
+    address public reserveWallet;
 
     /** Возможные состояния
      *
@@ -98,8 +110,17 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     // Событие покупки токена из бэкенда
     event BackendInvested(address receiver, uint weiAmount, uint tokenAmount, uint8 currencyType, uint currencyAmount);
 
+    // Событие изменения даты начала пресейла
+    event PresaleStartsAtChanged(uint time);
+
     // Событие изменения даты окончания пресейла
-    event EndsAtChanged(uint newEndsAt);
+    event PresaleEndsAtChanged(uint time);
+
+    // Событие изменения даты начала
+    event StartsAtChanged(uint time);
+
+    // Событие изменения даты окончания
+    event EndsAtChanged(uint time);
 
     // Событие изменения минимальной суммы сборов
     event SoftCapGoalChanged(uint newGoal);
@@ -111,34 +132,49 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     event ExchangeRateChanged(uint newExchangeRate);
 
     // Конструктор, в целях безопасности, агента изменения можно установить только в конструкторе
-    function AllocatedCappedCrowdsale(address _token, address _multisigOrSimpleWallet, uint _start, uint _end, address _teamMultisigOrSimpleWallet, address _advisorsMultisigOrSimpleWallet, address _referalMultisigOrSimpleWallet, address _reserveMultisigOrSimpleWallet) {
-        requireValidAddress(_multisigOrSimpleWallet);
-        requireValidAddress(_teamMultisigOrSimpleWallet);
-        requireValidAddress(_advisorsMultisigOrSimpleWallet);
-        requireValidAddress(_referalMultisigOrSimpleWallet);
-        requireValidAddress(_reserveMultisigOrSimpleWallet);
+    function AllocatedCappedCrowdsale(address _token, address _destinationWallet, address _presaleWallet, uint _presaleStart, uint _presaleEnd, uint _start, uint _end, address _teamWallet, address _advisorsWallet, address _referalWallet, address _reserveWallet) {
+        // Проверка адресов
+        requireValidAddress(_token);
 
-        // Проверяем, что дата начала не = 0
+        requireValidAddress(_destinationWallet);
+        requireValidAddress(_presaleWallet);
+        requireValidAddress(_teamWallet);
+        requireValidAddress(_advisorsWallet);
+        requireValidAddress(_referalWallet);
+        requireValidAddress(_reserveWallet);
+
+        // Проверяем даты
+        require(_presaleStart != 0);
+        require(_presaleEnd != 0);
+
         require(_start != 0);
-        // Проверяем, что дата окончания не = 0
         require(_end != 0);
-        // Проверяем дату окончания
+
+        require(_presaleStart < _presaleEnd);
         require(_start < _end);
+
+        // Проверяем, что дата начала TGE больше даты окончания пресейла
+        require(_start > _presaleEnd);
 
         // Токен, который поддерживает сжигание
         token = BurnableCrowdsaleToken(_token);
 
-        multisigOrSimpleWallet = _multisigOrSimpleWallet;
+        destinationWallet = _destinationWallet;
+        presaleWallet = _presaleWallet;
+
+        presaleStartsAt = _presaleStart;
+        presaleEndsAt = _presaleEnd;
 
         startsAt = _start;
         endsAt = _end;
 
-        // Адреса кошельков для команды, адвизоров, бонусов
-        teamMultisigOrSimpleWallet = _teamMultisigOrSimpleWallet;
-        advisorsMultisigOrSimpleWallet = _advisorsMultisigOrSimpleWallet;
-        referalMultisigOrSimpleWallet = _referalMultisigOrSimpleWallet;
-        reserveMultisigOrSimpleWallet = _reserveMultisigOrSimpleWallet;
+        // Адреса аккаунтов для команды, адвизоров, бонусов
+        teamWallet = _teamWallet;
+        advisorsWallet = _advisorsWallet;
+        referalWallet = _referalWallet;
+        reserveWallet = _reserveWallet;
 
+        // Кол-вол токенов к распределению, в случае успеха
         afterSuccessTokenDistributionAmount = teamTokenAmount.add(advisorsTokenAmount).add(referalTokenAmount).add(reserveTokenAmount);
     }
 
@@ -254,7 +290,7 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
         if (isFinalized) return State.Finalized;
 
         if (isRefunding) return State.Refunding;
-        else if (block.timestamp < startsAt) return State.PreFunding;
+        else if (block.timestamp < presaleStartsAt) return State.PreFunding;
         else if (block.timestamp <= endsAt && !isAllTokensSold()) return State.Funding;
         else if (isSoftCapGoalReached()) return State.Success;
         else return State.Failure;
@@ -271,9 +307,13 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
 
         internalAssignTokens(receiver, weiAmount, tokenAmount);
 
-        // Шлем на кошелёк эфир
-        // Функция - прослойка для возможности переопределения в дочерних классах
-        internalDeposit(multisigOrSimpleWallet, weiAmount);
+        // Пресейл
+        if (block.timestamp >= presaleStartsAt && block.timestamp <= presaleEndsAt){
+            internalPresaleDeposit(presaleWallet, weiAmount);
+        } else if (block.timestamp >= startsAt && block.timestamp <= endsAt){
+            // TGE
+            internalSaleDeposit(destinationWallet, weiAmount);
+        }
 
         // Вызываем событие
         Invested(receiver, weiAmount, tokenAmount);
@@ -324,16 +364,52 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     }
 
     /**
+     * Функция, которая устанавливает новый адрес, куда будут переведены средства, в случаем
+     */
+    function setDestinationWallet(address destinationAddress) external onlyOwner isNotFinalized{
+        destinationWallet = destinationAddress;
+
+        internalSetDestinationWallet(destinationAddress);
+    }
+
+    /**
+     * Позволяет менять владельцу дату начала пресейла
+     */
+    function setPresaleStartsAt(uint time) external onlyOwner {
+        presaleStartsAt = time;
+
+        // Вызываем событие
+        PresaleStartsAtChanged(presaleStartsAt);
+    }
+
+    /**
+     * Позволяет менять владельцу дату окончания пресейла
+     */
+    function setPresaleEndsAt(uint time) external onlyOwner {
+        presaleEndsAt = time;
+
+        // Вызываем событие
+        PresaleEndsAtChanged(presaleEndsAt);
+    }
+
+    /**
      * Позволяет менять владельцу дату окончания
      */
     function setEndsAt(uint time) external onlyOwner {
-        // Не даем менять прошлое
-        require(now <= time);
-
         endsAt = time;
 
         // Вызываем событие
         EndsAtChanged(endsAt);
+    }
+
+    /**
+     * Позволяет менять владельцу дату начала
+     */
+    function setStartsAt(uint time) external onlyOwner {
+        startsAt = time;
+
+        // Вызываем событие
+        StartsAtChanged(startsAt);
     }
 
     /**
@@ -366,7 +442,7 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     /**
      * Финализатор, вызвать может только владелец и только в случае успеха
      */
-    function finalize() public inState(State.Success) onlyOwner {
+    function finalize() external onlyOwner inState(State.Success) {
         // Продажи должны быть не завершены
         require(!isFinalized);
 
@@ -378,23 +454,32 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
      */
     function internalAssignTokens(address receiver, uint weiAmount, uint tokenAmount) internal {
         // Новый инвестор?
-        if (investedAmountOf[receiver] == 0) {
+        if (investedAmountOf[receiver] == 0 && presaleInvestedAmountOf[receiver] == 0) {
             investorCount++;
         }
 
         // Переводим токены инвестору
-        // Если перевод не удался, откатываем транзакцию
-        if (!token.transfer(receiver, tokenAmount)) revert();
+        // Если перевод не удался, будет вызван throw
+        token.transfer(receiver, tokenAmount);
 
         // Обновляем стату
         updateStat(receiver, weiAmount, tokenAmount);
     }
 
     /**
-     * Низкоуровневая функция перевода эфира на контракт, функция доступна для переопределения в дочерних классах, но не публична
+     * Низкоуровневая функция перевода эфира на контракт для стадии продаж, функция доступна для переопределения в дочерних классах, но не публична
      */
-    function internalDeposit(address receiver, uint weiAmount) internal {
+    function internalSaleDeposit(address receiver, uint weiAmount) internal {
         // переопределяется в наследниках
+    }
+
+    /**
+     * Низкоуровневая функция перевода эфира на контракт для стадии пресейла, функция доступна для переопределения в дочерних классах, но не публична
+     */
+    function internalPresaleDeposit(address receiver, uint weiAmount) internal {
+        // Может переопредяться в наследниках
+
+        presaleWallet.transfer(weiAmount);
     }
 
     /**
@@ -411,6 +496,9 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
         // Определяется в наследниках
     }
 
+    /**
+     * Низкоуровневая функция финализации продаж
+     */
     function internalFinalize() internal {
         // 1. Сжигаем остатки
         // Всего можем продать token.totalSupply - afterSuccessTokenDistributionAmount
@@ -430,25 +518,38 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
         uint referalTokenTransferAmount = referalTokenAmount.mul(10 ** token.decimals());
         uint reserveTokenTransferAmount = reserveTokenAmount.mul(10 ** token.decimals());
 
-        if (!token.transfer(teamMultisigOrSimpleWallet, teamTokenTransferAmount)) revert();
-        if (!token.transfer(advisorsMultisigOrSimpleWallet, advisorsTokenTransferAmount)) revert();
-        if (!token.transfer(referalMultisigOrSimpleWallet, referalTokenTransferAmount)) revert();
-        if (!token.transfer(reserveMultisigOrSimpleWallet, reserveTokenTransferAmount)) revert();
+        if (!token.transfer(teamWallet, teamTokenTransferAmount)) revert();
+        if (!token.transfer(advisorsWallet, advisorsTokenTransferAmount)) revert();
+        if (!token.transfer(referalWallet, referalTokenTransferAmount)) revert();
+        if (!token.transfer(reserveWallet, reserveTokenTransferAmount)) revert();
 
         isFinalized = true;
 
-        // Определяется в наследниках
+        // Переопределяется в наследниках
     }
 
     /**
-     * Обновляем стату
+     * Функция, которая переопределяется в надледниках и выполняется после установки адреса аккаунта для перевода средств
+     */
+    function internalSetDestinationWallet(address destinationAddress) internal{
+    }
+
+    /**
+     * Обновление статистики
      */
     function updateStat(address receiver, uint weiAmount, uint tokenAmount) private {
         weiRaised = weiRaised.add(weiAmount);
         tokensSold = tokensSold.add(tokenAmount);
 
-        investedAmountOf[receiver] = investedAmountOf[receiver].add(weiAmount);
         tokenAmountOf[receiver] = tokenAmountOf[receiver].add(tokenAmount);
+
+        // Пресейл
+        if (block.timestamp >= presaleStartsAt && block.timestamp <= presaleEndsAt){
+            presaleInvestedAmountOf[receiver] = presaleInvestedAmountOf[receiver].add(weiAmount);
+        } else if (block.timestamp >= startsAt && block.timestamp <= endsAt){
+            // TGE
+            investedAmountOf[receiver] = investedAmountOf[receiver].add(weiAmount);
+        }
     }
 
     /**
@@ -462,11 +563,11 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
         _;
     }
 
-    /** Когда можем принимать платежи: идут продажи или набрали soft cap, при этом не достигнут hard cap  */
+    /** Когда можем принимать платежи: идут продажи, при этом не достигнут hard cap  */
     modifier canReceivePayments() {
         State currentState = getState();
 
-        require((currentState == State.Funding || currentState == State.Success) && !isHardCapGoalReached());
+        require(currentState == State.Funding && !isHardCapGoalReached());
 
         _;
     }
@@ -474,6 +575,13 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     /** Курс эфира и стоимость токена установлены  */
     modifier isEtherRateAndTokenPriceAssigned() {
         require(currentEtherRateInCents > 0 && oneTokenInCents > 0);
+
+        _;
+    }
+
+    /** Только, если продажи не завершены успехом */
+    modifier isNotFinalized(){
+        require(!isFinalized);
 
         _;
     }

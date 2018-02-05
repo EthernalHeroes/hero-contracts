@@ -18,14 +18,30 @@ contract RefundableAllocatedCappedCrowdsale is AllocatedCappedCrowdsale {
     */
     FundsVault public fundsVault;
 
+    /* Адрес, куда будут направляться средства, в случае возврата средств при манипуляциях с токенами во время TGE  */
+    address public sumpWallet;
+
     /** Мапа адрес инвестора - был ли совершен возврат среств */
     mapping (address => bool) public refundedInvestors;
 
-    function RefundableAllocatedCappedCrowdsale(address _token, address _multisigOrSimpleWallet, address _sumpWallet, uint _start, uint _end, address _teamMultisigOrSimpleWallet, address _advisorsMultisigOrSimpleWallet, address _referalMultisigOrSimpleWallet, address _reserveMultisigOrSimpleWallet) AllocatedCappedCrowdsale(_token, _multisigOrSimpleWallet, _start, _end, _teamMultisigOrSimpleWallet, _advisorsMultisigOrSimpleWallet, _referalMultisigOrSimpleWallet, _reserveMultisigOrSimpleWallet){
+    function RefundableAllocatedCappedCrowdsale(address _token, address _destinationWallet, address _presaleWallet, address _sumpWallet, uint _presaleStart, uint _presaleEnd, uint _start, uint _end, address _teamWallet, address _advisorsWallet, address _referalWallet, address _reserveWallet) AllocatedCappedCrowdsale(_token, _destinationWallet, _presaleWallet, _presaleStart, _presaleEnd, _start, _end, _teamWallet, _advisorsWallet, _referalWallet, _reserveWallet){
+        requireValidAddress(_sumpWallet);
+
+        sumpWallet = _sumpWallet;
+
         // Создаем от контракта продаж новое хранилище, доступ к нему имеет только контракт продаж
-        // При успешном завершении продаж, все собранные средства поступят на _multisigOrSimpleWallet
+        // При успешном завершении продаж, все собранные средства поступят на _destinationWallet
         // В противном случае могут быть переведены обратно инвесторам
-        fundsVault = new FundsVault(_multisigOrSimpleWallet, _sumpWallet);
+        fundsVault = new FundsVault(_destinationWallet, _sumpWallet);
+
+    }
+
+    /** Функция меняющая адрес аккаунта, куда будут направляться средства, в случае возврата средств при манипуляциях с токенами во время TGE
+    */
+    function setSumpWallet(address destinationAddress) public onlyOwner isNotFinalized {
+        sumpWallet = destinationAddress;
+
+        fundsVault.setSump(sumpWallet);
     }
 
     /** Финализация
@@ -42,14 +58,22 @@ contract RefundableAllocatedCappedCrowdsale is AllocatedCappedCrowdsale {
 
     /** Переопределение функции принятия допозита на счет, в данном случае, идти будет через vault
     */
-    function internalDeposit(address receiver, uint weiAmount) internal{
+    function internalSaleDeposit(address receiver, uint weiAmount) internal {
         // Шлем на кошелёк эфир
         fundsVault.deposit.value(weiAmount)(msg.sender);
     }
 
+    /** Устанавливаем новый адрес
+    */
+    function internalSetDestinationWallet(address destinationAddress) internal {
+        fundsVault.setWallet(destinationAddress);
+
+        super.internalSetDestinationWallet(destinationAddress);
+    }
+
     /** Переопределение функции возврата, возврат можно сделать только раз
     */
-    function internalRefund(address receiver) internal{
+    function internalRefund(address receiver) internal {
         // Поддерживаем только 1 возврат
         if (refundedInvestors[receiver]) revert();
 
