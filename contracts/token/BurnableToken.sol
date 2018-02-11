@@ -1,3 +1,4 @@
+///// [review] Лучше поднять версию до текущей релизной
 pragma solidity ^0.4.8;
 
 import "../validation/ValidationUtil.sol";
@@ -11,9 +12,12 @@ import '../zeppelin/contracts/math/SafeMath.sol';
  *
  */
 
+///// [review] В OpenZeppelin есть BurnableToken, возможно можно заменить на него 
+///// [review] https://github.com/OpenZeppelin/zeppelin-solidity/blob/release/v1.5.0/contracts/token/BurnableToken.sol
 contract BurnableToken is StandardToken, Ownable, ValidationUtil {
     using SafeMath for uint;
 
+    ///// [review] Лучше всегда явно ставить значение по умолчанию, для наглядности
     address public tokenOwnerBurner;
 
     /** Событие, сколько токенов мы сожгли */
@@ -22,6 +26,11 @@ contract BurnableToken is StandardToken, Ownable, ValidationUtil {
     function setOwnerBurner(address _tokenOwnerBurner) public onlyOwner invalidOwnerBurner{
         // Проверка, что адрес не пустой
         requireValidAddress(_tokenOwnerBurner);
+
+        ///// [review] Мне кажется, что лучше убрать requireValidAddress и делать просто:
+        /*
+        require(!isAddressEmpty(_tokenOwnerBurner));
+        */
 
         tokenOwnerBurner = _tokenOwnerBurner;
     }
@@ -56,11 +65,17 @@ contract BurnableToken is StandardToken, Ownable, ValidationUtil {
         // Проверка, что адрес не пустой
         requireValidAddress(tokenOwnerBurner);
 
+        ///// [review] Я бы убрал requireValidAddress вообще и сделал бы так:
+        /*
+        require(isAddressNotEmpty(tokenOwnerBurner));
+        */
+
         _;
     }
 
     modifier invalidOwnerBurner() {
         // Проверка, что адрес не пустой
+        ///// [review] Правильный комментарий: "Проверка, что адрес пустой"
         require(!isAddressNotEmpty(tokenOwnerBurner));
 
         _;

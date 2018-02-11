@@ -1,3 +1,4 @@
+///// [review] Лучше поднять версию до текущей релизной
 pragma solidity ^0.4.8;
 
 import "../zeppelin/contracts/ownership/Ownable.sol";
@@ -16,6 +17,7 @@ contract FundsVault is Ownable, ValidationUtil {
     using SafeMath for uint;
     using Math for uint;
 
+    ///// [review] Если я все правильно понял, то после Refunding невозможен переход в Active/Closed опять.
     enum State {Active, Refunding, Closed}
 
     State public state;
@@ -46,6 +48,8 @@ contract FundsVault is Ownable, ValidationUtil {
         wallet = _wallet;
         sump = _sump;
 
+        ///// [review] Crowdsale будет активен начиная с 1ой секунды, как закончится деплой?
+        ///// [review] Может быть нужно добавить методы по запуску/паузе?
         state = State.Active;
     }
 
@@ -120,5 +124,7 @@ contract FundsVault is Ownable, ValidationUtil {
 
         _;
     }
+
+    ///// [review] Сюда лучше добавить пустую function(){}
 
 }

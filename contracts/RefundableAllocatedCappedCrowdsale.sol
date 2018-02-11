@@ -1,3 +1,4 @@
+///// [review] Лучше поднять версию до текущей релизной
 pragma solidity ^0.4.8;
 
 import "./AllocatedCappedCrowdsale.sol";
@@ -53,11 +54,13 @@ contract RefundableAllocatedCappedCrowdsale is AllocatedCappedCrowdsale {
     }
 
     function internalEnableRefunds() internal {
+        ///// [review] Если я все правильно понял, то после refunds невозможно завершение  
         fundsVault.enableRefunds();
     }
 
     /** Переопределение функции принятия допозита на счет, в данном случае, идти будет через vault
     */
+    ///// [review] Параметр receiver не используется
     function internalSaleDeposit(address receiver, uint weiAmount) internal {
         // Шлем на кошелёк эфир
         fundsVault.deposit.value(weiAmount)(msg.sender);
@@ -68,13 +71,16 @@ contract RefundableAllocatedCappedCrowdsale is AllocatedCappedCrowdsale {
     function internalSetDestinationWallet(address destinationAddress) internal {
         fundsVault.setWallet(destinationAddress);
 
+        ///// [review] Почему нужно вызывать метод базового класса? Во многих других переопределениях такого нет (см. например выше)
         super.internalSetDestinationWallet(destinationAddress);
     }
 
     /** Переопределение функции возврата, возврат можно сделать только раз
     */
+    ///// [review, critical] При refund не вызывается burn или передача токенов
     function internalRefund(address receiver) internal {
         // Поддерживаем только 1 возврат
+        ///// [review] Заменить на require 
         if (refundedInvestors[receiver]) revert();
 
         // Получаем значение, которое нам было переведено в эфире
