@@ -1,3 +1,4 @@
+///// [review] Лучше поднять версию до текущей релизной
 pragma solidity ^0.4.8;
 
 import "./BurnableToken.sol";

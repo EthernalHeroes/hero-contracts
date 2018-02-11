@@ -1,5 +1,5 @@
+///// [review] Лучше поднять версию до текущей релизной
 pragma solidity ^0.4.8;
-
 
 import "./validation/ValidationUtil.sol";
 import "./Haltable.sol";
@@ -50,6 +50,7 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     uint public endsAt;
 
     /* Кол-во проданных токенов*/
+    ///// [review] Размерность - (10 ^ token.decimals())
     uint public tokensSold;
 
     /* Если не набрали минимальной суммы, то инвесторы могут запросить refund */
@@ -85,6 +86,8 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     mapping (address => uint) public tokenAmountOf;
 
     /** Мапа, адрес инвестора - кол-во эфира */
+
+    ///// [review] В отличии от этого поля, deposited в FundsVault может уменьшаться
     mapping (address => uint) public investedAmountOf;
 
     /** Адреса, куда будут распределены токены */
@@ -102,6 +105,10 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
      * - Finalized: Сработал финализатор
      * - Refunding: Возвращаем эфир, который загружен на контракт
      */
+
+    ///// [review] Меня ввело в заблуждение название PreFunding - 
+    ///// [review] С англ. это можно перевести как предпродажи
+    ///// [review] Я бы переименовал в Init или Stopped чтобы обозначить, что токены еще нельзя начислять/продавать
     enum State{PreFunding, Funding, Success, Failure, Finalized, Refunding}
 
     // Событие покупки токена
@@ -272,7 +279,9 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
             revert();
         }
 
+        ///// [review] (10 ^ 18) * (10 ^ 18) / (10 ^ 18) = 10 ^ 18
         uint resultValue = weiAmount.mul(multiplier).div(getOneTokenInWei());
+        ///// [review] 10 ^ 18
         uint tokenAmount = getAvailableTokens(resultValue.mul(bonusPercentage.add(100)).div(100));
 
         // Кол-во токенов к выдаче = 0?, делаем откат
@@ -303,6 +312,10 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
         address receiver = msg.sender;
         uint weiAmount = msg.value;
 
+        ///// [review] 1. Если здесь человек купит по одной цене, то может забрать себе токены из следующий "когорты" токенов по этой цене
+        ///// [review] Об этом нужно не забыть сказать в условиях покупки
+        ///// [review] 2. Не уверен, но если такое произойдет - ваша математика точно сойдется?
+        ///// [review] то есть будет ли валидный hard cap, если люди получат чуть больше токенов по чуть меньшей цене?
         uint tokenAmount = calcTokenAmount(receiver, weiAmount);
 
         internalAssignTokens(receiver, weiAmount, tokenAmount);
@@ -312,6 +325,8 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
             internalPresaleDeposit(presaleWallet, weiAmount);
         } else if (block.timestamp >= startsAt && block.timestamp <= endsAt){
             // TGE
+
+            ///// [review] Параметр destinationWallet не используется
             internalSaleDeposit(destinationWallet, weiAmount);
         }
 
@@ -323,6 +338,10 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
      * Покупка токенов через бэкенд, кидаем токены на адрес отправителя
      * Эта функция нужна в случае перевода альтернативных валют через бэкенд
      */
+    ///// [review] Очень опасная функция, которая может не понравится инвесторам)
+    ///// [review] 1. У них не будет никакой возможности проверить вашу честность
+    ///// [review] 2. Если ключик owner украдут -> будет плохо. Рекомендую здесь сделать отдельный аккаунт onlyBackend
+    ///// [review] (чтобы если уж украли, то смогли только эти функции вызывать, а не все и сразу, а вы бы смогли запаузить контракт с owner)
     function backendBuy(address receiver, uint weiAmount, uint8 currencyType, uint currencyAmount) external onlyOwner stopInEmergency isEtherRateAndTokenPriceAssigned canReceivePayments {
         uint tokenAmount = calcTokenAmount(receiver, weiAmount);
 
@@ -333,6 +352,7 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     }
 
     /* Включение режима возвратов */
+    ///// [review] Это должно вызываться только если soft cap is not reached (state==Failure)
     function enableRefunds() external onlyOwner {
         require(!isRefunding);
 
@@ -344,10 +364,15 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     /**
      * Спец. функция, которая позволяет продавать токены вне ценовой политики, доступка только владельцу
      */
+    ///// [review] Очень опасная функция, которая может не понравится инвесторам)
+    ///// [review] Лучше ее вызывать не явно, а автоматически из конструктора или перед началом Presale/ICO
+    ///// [review] Всегда лучше написать контракт так, чтобы если вы потеряете ключик owner - то деньги и все остальное
+    ///// [review] можно было бы как-то получить
     function preallocate(address receiver, uint weiAmount, uint tokenAmount) external onlyOwner {
         internalAssignTokens(receiver, weiAmount, getAvailableTokens(tokenAmount));
 
         // Вызываем событие
+        ///// [review] почему Invested? 
         Invested(receiver, weiAmount, tokenAmount);
     }
 
@@ -442,10 +467,15 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     /**
      * Финализатор, вызвать может только владелец и только в случае успеха
      */
+    ///// [review] Лучше ее вызывать не явно, а автоматически из конструктора или перед началом Presale/ICO
+    ///// [review] Всегда лучше написать контракт так, чтобы если вы потеряете ключик owner - то деньги и все остальное
+    ///// [review] можно было бы как-то получить
     function finalize() external onlyOwner inState(State.Success) {
         // Продажи должны быть не завершены
         require(!isFinalized);
 
+        ///// [review] Здесь вызывается метод internalFinalize() из файла RefundableAllocatedCappedCrowdsale.sol (переопределение)
+        ///// [review] Который в свою очередь вызывает internalFinalize() из ТЕКУЩЕГО файла 
         internalFinalize();
     }
 
@@ -454,6 +484,7 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
      */
     function internalAssignTokens(address receiver, uint weiAmount, uint tokenAmount) internal {
         // Новый инвестор?
+        ///// [review] Лучше это перенести в updateStat
         if (investedAmountOf[receiver] == 0 && presaleInvestedAmountOf[receiver] == 0) {
             investorCount++;
         }
@@ -518,6 +549,7 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
         uint referalTokenTransferAmount = referalTokenAmount.mul(10 ** token.decimals());
         uint reserveTokenTransferAmount = reserveTokenAmount.mul(10 ** token.decimals());
 
+        ///// [review] Заменить на require 
         if (!token.transfer(teamWallet, teamTokenTransferAmount)) revert();
         if (!token.transfer(advisorsWallet, advisorsTokenTransferAmount)) revert();
         if (!token.transfer(referalWallet, referalTokenTransferAmount)) revert();

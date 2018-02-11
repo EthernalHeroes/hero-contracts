@@ -1,3 +1,4 @@
+///// [review] Лучше поднять версию до текущей релизной
 pragma solidity ^0.4.8;
 
 import '../zeppelin/contracts/token/StandardToken.sol';
@@ -8,6 +9,7 @@ import "../zeppelin/contracts/ownership/Ownable.sol";
  *
  * ERC-20 токен, для ICO
  *
+///// [review] Не понятно, как это условие выполняется. Думаю, лучше убрать этот комментарий или поменять логику.
  * - Токен может быть с верхним лимитом или без него
  *
  */
@@ -41,6 +43,10 @@ contract CrowdsaleToken is StandardToken, Ownable {
         symbol = _symbol;
         decimals = _decimals;
 
+        ////// [review] Вот здесь странно, что totalSupply устновлен, но никому не начислен баланс. 
+        ////// [reivew] То есть уже по стандарту расхождение. Я бы переделал семантику так, чтобы либо: 
+        ////// [review] 1) убрать initialSupply и делать все в конструкторе; 
+        ////// [review] 2) либо делать все в initialSupply
         totalSupply = _initialSupply;
     }
 
@@ -59,6 +65,8 @@ contract CrowdsaleToken is StandardToken, Ownable {
     /**
      * Владелец может обновить инфу по токену
      */
+    ////// [review] Странный функционал, если честно. Это точно необходимо?
+    ////// [review] Тогда не понятно, почему decimals не меняются втч.
     function setTokenInformation(string _name, string _symbol) external onlyOwner {
         name = _name;
         symbol = _symbol;
