@@ -52,8 +52,8 @@ contract FundsVault is Ownable, ValidationUtil {
     /**
      * Положить депозит в хранилище
      */
-    function deposit(address investor) public payable onlyOwner inState(State.Active) {
-        deposited[investor] = deposited[investor].add(msg.value);
+    function deposit(address buyer) public payable onlyOwner inState(State.Active) {
+        deposited[buyer] = deposited[buyer].add(msg.value);
     }
 
     /**
@@ -95,23 +95,23 @@ contract FundsVault is Ownable, ValidationUtil {
      */
 
     // При нормальных обстоятельств, если пользователь не манипулировал токенами
-    function normalRefund(address investor, uint weiAmount) public onlyOwner inState(State.Refunding){
-        uint depositedValue = weiAmount.min256(deposited[investor]);
-        deposited[investor] = 0;
+    function normalRefund(address buyer, uint weiAmount) public onlyOwner inState(State.Refunding){
+        uint depositedValue = weiAmount.min256(deposited[buyer]);
+        deposited[buyer] = 0;
 
-        investor.transfer(depositedValue);
+        buyer.transfer(depositedValue);
 
-        Refunded(investor, depositedValue);
+        Refunded(buyer, depositedValue);
     }
 
     // В случае, если пользователь делал переводы через контракт токена
-    function sumpRefund(address investor, uint weiAmount) public onlyOwner inState(State.Refunding){
-        uint depositedValue = weiAmount.min256(deposited[investor]);
-        deposited[investor] = 0;
+    function sumpRefund(address buyer, uint weiAmount) public onlyOwner inState(State.Refunding){
+        uint depositedValue = weiAmount.min256(deposited[buyer]);
+        deposited[buyer] = 0;
 
         sump.transfer(depositedValue);
 
-        RefundedToSump(investor, depositedValue);
+        RefundedToSump(buyer, depositedValue);
     }
 
     /** Только, если текущее состояние соответсвует состоянию  */

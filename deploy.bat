@@ -1,2 +1,2 @@
 del /Q build\contracts\*.*
-truffle.cmd migrate --network dev
+truffle.cmd migrate --network main

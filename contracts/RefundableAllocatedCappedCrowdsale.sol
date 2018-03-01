@@ -22,9 +22,9 @@ contract RefundableAllocatedCappedCrowdsale is AllocatedCappedCrowdsale {
     address public sumpWallet;
 
     /** Мапа адрес инвестора - был ли совершен возврат среств */
-    mapping (address => bool) public refundedInvestors;
+    mapping (address => bool) public refundedBuyers;
 
-    function RefundableAllocatedCappedCrowdsale(address _token, address _destinationWallet, address _presaleWallet, address _sumpWallet, uint _presaleStart, uint _presaleEnd, uint _start, uint _end, address _teamWallet, address _advisorsWallet, address _referalWallet, address _reserveWallet) AllocatedCappedCrowdsale(_token, _destinationWallet, _presaleWallet, _presaleStart, _presaleEnd, _start, _end, _teamWallet, _advisorsWallet, _referalWallet, _reserveWallet){
+    function RefundableAllocatedCappedCrowdsale(address _token, address _destinationWallet, address _presaleWallet, address _sumpWallet, uint _presaleStart, uint _presaleEnd, uint _start, uint _end, address _teamWallet, address _advisorsWallet, address _referalWallet, address _reserveWallet, uint _teamTokensIssueDate) AllocatedCappedCrowdsale(_token, _destinationWallet, _presaleWallet, _presaleStart, _presaleEnd, _start, _end, _teamWallet, _advisorsWallet, _referalWallet, _reserveWallet, _teamTokensIssueDate){
         requireValidAddress(_sumpWallet);
 
         sumpWallet = _sumpWallet;
@@ -75,7 +75,7 @@ contract RefundableAllocatedCappedCrowdsale is AllocatedCappedCrowdsale {
     */
     function internalRefund(address receiver) internal {
         // Поддерживаем только 1 возврат
-        if (refundedInvestors[receiver]) revert();
+        if (refundedBuyers[receiver]) revert();
 
         // Получаем значение, которое нам было переведено в эфире
         uint weiValue = investedAmountOf[receiver];
@@ -99,7 +99,7 @@ contract RefundableAllocatedCappedCrowdsale is AllocatedCappedCrowdsale {
         investedAmountOf[receiver] = 0;
         weiRefunded = weiRefunded.add(weiValue);
 
-        refundedInvestors[receiver] = true;
+        refundedBuyers[receiver] = true;
     }
 
 }

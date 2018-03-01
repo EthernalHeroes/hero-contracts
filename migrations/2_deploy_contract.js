@@ -36,6 +36,7 @@ module.exports = function (deployer, network, accounts) {
 
     const startDateTimestamp = Storage.startDateTimestamp;
     const endDateTimestamp = Storage.endDateTimestamp;
+    const teamTokenIssueDateTimestamp = Storage.teamTokenIssueDateTimestamp;
 
     const teamWalletAddress = Storage.teamWalletAddress;
     const advisorsWalletAddress = Storage.advisorsWalletAddress;
@@ -72,7 +73,9 @@ module.exports = function (deployer, network, accounts) {
             teamWalletAddress,
             advisorsWalletAddress,
             referalWalletAddress,
-            reserveWalletAddress
+            reserveWalletAddress,
+
+            teamTokenIssueDateTimestamp
         );
     });
 

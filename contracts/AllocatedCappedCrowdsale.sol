@@ -24,6 +24,7 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     uint advisorsTokenAmount = 3000000;
     uint referalTokenAmount = 2000000;
     uint reserveTokenAmount = 35000000;
+    uint presaleTokenAmount = 5000000;
 
     /* Кол-во токенов которые нужно будет распределить после успешного завершения торгов */
     uint afterSuccessTokenDistributionAmount;
@@ -43,6 +44,9 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     /* Конец пресейла в формате UNIX timestamp */
     uint public presaleEndsAt;
 
+    /* Дата, когда можно забрать токены для команды, в формате UNIX timestamp */
+    uint public teamTokensIssueDate;
+
     /* Старт продаж в формате UNIX timestamp */
     uint public startsAt;
 
@@ -52,16 +56,22 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     /* Кол-во проданных токенов*/
     uint public tokensSold;
 
-    /* Если не набрали минимальной суммы, то инвесторы могут запросить refund */
-    uint public softCapGoalInCents = 200000000;
+    /* Кол-во проданных токенов*/
+    uint public presaleTokensSold;
 
-    uint public hardCapGoalInCents = 500000000;
+    /* Кол-во проданных presale токенов*/
+    uint public presaleTokensLeft;
+
+    /* Если не набрали минимальной суммы, то инвесторы могут запросить refund */
+    uint public softCapGoalInCents = 100000000;
+
+    uint public hardCapGoalInCents = 460000000;
 
     /* Сколько wei мы получили 10^18 wei = 1 ether */
     uint public weiRaised;
 
     /* Кол-во уникальных адресов, которые у наc получили токены */
-    uint public investorCount;
+    uint public buyerCount;
 
     /*  Сколько wei отдали инвесторам */
     uint public weiRefunded;
@@ -132,7 +142,7 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     event ExchangeRateChanged(uint newExchangeRate);
 
     // Конструктор, в целях безопасности, агента изменения можно установить только в конструкторе
-    function AllocatedCappedCrowdsale(address _token, address _destinationWallet, address _presaleWallet, uint _presaleStart, uint _presaleEnd, uint _start, uint _end, address _teamWallet, address _advisorsWallet, address _referalWallet, address _reserveWallet) {
+    function AllocatedCappedCrowdsale(address _token, address _destinationWallet, address _presaleWallet, uint _presaleStart, uint _presaleEnd, uint _start, uint _end, address _teamWallet, address _advisorsWallet, address _referalWallet, address _reserveWallet, uint _teamTokensIssueDate){
         // Проверка адресов
         requireValidAddress(_token);
 
@@ -156,6 +166,9 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
         // Проверяем, что дата начала TGE больше даты окончания пресейла
         require(_start > _presaleEnd);
 
+        //Проверяем дату для выдачи токенов команде
+        require(_teamTokensIssueDate != 0);
+
         // Токен, который поддерживает сжигание
         token = BurnableCrowdsaleToken(_token);
 
@@ -168,6 +181,8 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
         startsAt = _start;
         endsAt = _end;
 
+        teamTokensIssueDate = _teamTokensIssueDate;
+
         // Адреса аккаунтов для команды, адвизоров, бонусов
         teamWallet = _teamWallet;
         advisorsWallet = _advisorsWallet;
@@ -175,7 +190,9 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
         reserveWallet = _reserveWallet;
 
         // Кол-вол токенов к распределению, в случае успеха
-        afterSuccessTokenDistributionAmount = teamTokenAmount.add(advisorsTokenAmount).add(referalTokenAmount).add(reserveTokenAmount);
+        afterSuccessTokenDistributionAmount = teamTokenAmount.add(advisorsTokenAmount).add(referalTokenAmount).add(reserveTokenAmount).add(presaleTokenAmount);
+
+        presaleTokensLeft = presaleTokenAmount.mul(10 ** token.decimals());
     }
 
     /**
@@ -219,7 +236,7 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
      */
     function getTokensLeftForSale() public constant returns (uint) {
         // Кол-во токенов, которое адрес контракта можеть снять у owner'а и есть кол-во оставшихся токенов, из этой суммы нужно вычесть кол-во которое не участвует в продаже
-        uint tokenBalance = token.balanceOf(address(this));
+        uint tokenBalance = token.balanceOf(address(this)).add(presaleTokensSold);
         uint tokensForDistribution = afterSuccessTokenDistributionAmount.mul(10 ** token.decimals());
 
         if (tokenBalance <= tokensForDistribution){
@@ -332,6 +349,34 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
         BackendInvested(receiver, weiAmount, tokenAmount, currencyType, currencyAmount);
     }
 
+    /**
+     * Выдача бонусных токенов из пресейла
+     */
+    function backendSendBonusTokensFromPresale(address receiver, uint tokenAmount) external onlyOwner stopInEmergency {
+        uint tokenToSend = tokenAmount;
+
+        if (tokenToSend > presaleTokensLeft){
+            tokenToSend = presaleTokensLeft;
+        }
+
+        require(tokenToSend > 0);
+
+        //Сохранение в контракте продаж - не делаем, т.к. это не часть TGE
+        token.transfer(receiver, tokenToSend);
+
+        presaleTokensLeft = presaleTokensLeft.sub(tokenToSend);
+        presaleTokensSold = presaleTokensSold.add(tokenToSend);
+    }
+
+    /* В случае успеха, заблокированные токены для команды могут быть переведены только если наступила определенная дата */
+    function issueTeamTokens() public onlyOwner inState(State.Finalized) {
+        require(block.timestamp >= teamTokensIssueDate);
+
+        uint teamTokenTransferAmount = teamTokenAmount.mul(10 ** token.decimals());
+
+        if (!token.transfer(teamWallet, teamTokenTransferAmount)) revert();
+    }
+
     /* Включение режима возвратов */
     function enableRefunds() external onlyOwner {
         require(!isRefunding);
@@ -345,10 +390,19 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
      * Спец. функция, которая позволяет продавать токены вне ценовой политики, доступка только владельцу
      */
     function preallocate(address receiver, uint weiAmount, uint tokenAmount) external onlyOwner {
-        internalAssignTokens(receiver, weiAmount, getAvailableTokens(tokenAmount));
+        // Новый инвестор?
+        if (investedAmountOf[receiver] == 0) {
+            buyerCount++;
+        }
 
-        // Вызываем событие
-        Invested(receiver, weiAmount, tokenAmount);
+        // Переводим токены инвестору
+        // Если перевод не удался, будет вызван throw
+        token.transfer(receiver, tokenAmount);
+
+        weiRaised = weiRaised.add(weiAmount);
+        tokensSold = tokensSold.add(tokenAmount);
+
+        investedAmountOf[receiver] = investedAmountOf[receiver].add(weiAmount);
     }
 
     /**
@@ -455,7 +509,7 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
     function internalAssignTokens(address receiver, uint weiAmount, uint tokenAmount) internal {
         // Новый инвестор?
         if (investedAmountOf[receiver] == 0 && presaleInvestedAmountOf[receiver] == 0) {
-            investorCount++;
+            buyerCount++;
         }
 
         // Переводим токены инвестору
@@ -501,15 +555,11 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
      */
     function internalFinalize() internal {
         // 1. Сжигаем остатки
-        // Всего можем продать token.totalSupply - afterSuccessTokenDistributionAmount
-        // Продали - tokensSold
-        // Разницу нужно сжечь
-        uint tokensForSale = token.totalSupply().sub(afterSuccessTokenDistributionAmount.mul(10 ** token.decimals()));
-        uint remainingTokens = tokensForSale.sub(tokensSold);
+        uint tokensLeft = getTokensLeftForSale();
 
         // Если кол-во оставшихся токенов > 0, то сжигаем их
-        if (remainingTokens > 0){
-            token.burnOwnerTokens(remainingTokens);
+        if (tokensLeft > 0){
+            token.burnOwnerTokens(tokensLeft);
         }
 
         // 2. Переводим на адреса кошельков: team, advisor, referal, reserve
@@ -518,10 +568,11 @@ contract AllocatedCappedCrowdsale is Haltable, ValidationUtil {
         uint referalTokenTransferAmount = referalTokenAmount.mul(10 ** token.decimals());
         uint reserveTokenTransferAmount = reserveTokenAmount.mul(10 ** token.decimals());
 
-        if (!token.transfer(teamWallet, teamTokenTransferAmount)) revert();
         if (!token.transfer(advisorsWallet, advisorsTokenTransferAmount)) revert();
         if (!token.transfer(referalWallet, referalTokenTransferAmount)) revert();
         if (!token.transfer(reserveWallet, reserveTokenTransferAmount)) revert();
+
+        // Токены для команды можно получить позже через метод issueTeamTokens
 
         isFinalized = true;
 
